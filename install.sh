@@ -6,8 +6,9 @@
 #   说    明: 本脚本基于官方脚本修改，以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v5: 将软件源从 vaxilu/x-ui 更换为更活跃的 FranzKafkaYu/x-ui 分支，
-#                  以解决 armv7 等架构的 404 Not Found 问题，并修正了架构名称的匹配。
+#   2024-07-25 v6: 修正了 ARM 架构名称的匹配逻辑 (e.g., armv7 -> arm-7)，
+#                  以解决 FranzKafkaYu/x-ui 源的 404 Not Found 问题。
+#   2024-07-25 v5: 将软件源更换为更活跃的 FranzKafkaYu/x-ui 分支。
 #   2024-07-25 v4: 增强 OpenWrt 系统检测逻辑。
 #   2024-07-25 v3: 在安装前自动创建 /usr/local 目录。
 #   2024-07-25 v2: 改用 'uname -m' 进行架构检测。
@@ -66,13 +67,16 @@ detect_arch() {
             arch="arm64"
             ;;
         armv7l)
-            arch="armv7"
+            # 修正: FranzKafkaYu 的文件名是 arm-7
+            arch="arm-7"
             ;;
         armv6l)
-            arch="armv6"
+            # 修正: FranzKafkaYu 的文件名是 arm-6
+            arch="arm-6"
             ;;
         armv5*)
-            arch="armv5"
+            # 修正: FranzKafkaYu 的文件名是 arm-5
+            arch="arm-5"
             ;;
         *)
             arch=""
@@ -253,7 +257,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v5)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v6)"
 echo "=============================================================="
 echo ""
 
