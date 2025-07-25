@@ -7,7 +7,8 @@
 #             以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25: 修复了 detect_arch 函数中对 opkg 架构的错误解析问题。
+#   2024-07-25 v2: 改用 'uname -m' 进行架构检测，以提高兼容性和可靠性。
+#   2024-07-25 v1: 修复了 detect_arch 函数中对 opkg 架构的错误解析问题。
 #
 #================================================================
 
@@ -42,40 +43,37 @@ check_openwrt() {
 # 检测设备架构
 detect_arch() {
     echo "正在检测设备架构..."
-    # OpenWrt 的架构名称比较复杂, e.g., aarch64_cortex-a53
-    # 我们需要将其映射到 x-ui release 使用的名称
-    local opkg_arch
-    # 修正: opkg print-architecture 输出的第一行第二个字段才是架构名称
-    opkg_arch=$(opkg print-architecture | awk 'NR==1{print $2}')
+    # 使用 'uname -m' 获取架构, 这比解析 opkg 的输出更可靠
+    local raw_arch
+    raw_arch=$(uname -m)
 
-    case "$opkg_arch" in
+    case "$raw_arch" in
         x86_64)
             arch="amd64"
             ;;
-        aarch64_*)
+        aarch64)
             arch="arm64"
             ;;
-        arm_cortex-a7*|arm_cortex-a9*|arm_cortex-a15*)
+        armv7l)
             arch="arm-v7"
             ;;
-        arm_arm1176jzf-s_vfp)
+        armv6l)
             arch="arm-v6"
             ;;
-        arm_xscale)
+        armv5*)
             arch="arm-v5"
             ;;
         *)
-            # 如果 case 不匹配, arch 保持为空
             arch=""
             ;;
     esac
 
     if [ -z "$arch" ]; then
-        echo -e "${red}错误: 不支持的设备架构 '${opkg_arch}'。${plain}"
+        echo -e "${red}错误: 不支持的设备架构 '${raw_arch}'。${plain}"
         echo -e "${yellow}x-ui 官方没有提供适用于 MIPS 等架构的预编译文件。${plain}"
         exit 1
     fi
-    echo -e "${green}检测到兼容的架构: ${arch}${plain}"
+    echo -e "${green}检测到兼容的架构: ${arch} (基于 ${raw_arch})${plain}"
 }
 
 # 使用 opkg 安装基础依赖
@@ -239,7 +237,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本"
+echo "         x-ui for OpenWrt 一键安装脚本 (v2)"
 echo "=============================================================="
 echo ""
 
