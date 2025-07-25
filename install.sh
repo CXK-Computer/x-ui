@@ -6,12 +6,10 @@
 #   说    明: 本脚本基于官方脚本修改，以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v6: 修正了 ARM 架构名称的匹配逻辑 (e.g., armv7 -> arm-7)，
-#                  以解决 FranzKafkaYu/x-ui 源的 404 Not Found 问题。
+#   2024-07-25 v7: 硬编码一个已知稳定的新版本号 (2.1.2)，以绕过因网络问题
+#                  导致的 GitHub API 请求失败或数据陈旧的问题。
+#   2024-07-25 v6: 修正了 ARM 架构名称的匹配逻辑 (e.g., armv7 -> arm-7)。
 #   2024-07-25 v5: 将软件源更换为更活跃的 FranzKafkaYu/x-ui 分支。
-#   2024-07-25 v4: 增强 OpenWrt 系统检测逻辑。
-#   2024-07-25 v3: 在安装前自动创建 /usr/local 目录。
-#   2024-07-25 v2: 改用 'uname -m' 进行架构检测。
 #
 #================================================================
 
@@ -58,7 +56,6 @@ detect_arch() {
     local raw_arch
     raw_arch=$(uname -m)
 
-    # 修正: 根据 FranzKafkaYu/x-ui 的 release 文件名来匹配
     case "$raw_arch" in
         x86_64)
             arch="amd64"
@@ -67,15 +64,12 @@ detect_arch() {
             arch="arm64"
             ;;
         armv7l)
-            # 修正: FranzKafkaYu 的文件名是 arm-7
             arch="arm-7"
             ;;
         armv6l)
-            # 修正: FranzKafkaYu 的文件名是 arm-6
             arch="arm-6"
             ;;
         armv5*)
-            # 修正: FranzKafkaYu 的文件名是 arm-5
             arch="arm-5"
             ;;
         *)
@@ -183,16 +177,13 @@ install_x-ui() {
     cd /usr/local/ || exit
 
     local last_version
-    # 如果用户没有指定版本号，就获取最新版
+    # 如果用户没有通过参数指定版本，则使用硬编码的稳定版本
     if [ -z "$1" ]; then
-        echo "正在从 ${REPO_OWNER}/x-ui 检测最新版本..."
-        last_version=$(curl -Ls "https://api.github.com/repos/${REPO_OWNER}/x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [ -z "$last_version" ]; then
-            echo -e "${red}检测 x-ui 版本失败，可能是超出 Github API 限制，请稍后再试。${plain}"
-            exit 1
-        fi
-        echo -e "检测到 x-ui 最新版本：${green}${last_version}${plain}，开始安装..."
+        # 硬编码一个已知包含所有架构的稳定版本号，以绕过不稳定的 GitHub API 请求
+        last_version="2.1.2"
+        echo -e "${yellow}为确保稳定性，将安装指定的 x-ui 版本: ${green}${last_version}${plain}"
     else
+        # 允许用户通过脚本参数手动指定版本号
         last_version=$1
         echo -e "开始安装指定版本 x-ui: ${green}v$1${plain}"
     fi
@@ -224,7 +215,6 @@ install_x-ui() {
 
     # 安装 x-ui 命令行管理工具
     echo "正在安装 x-ui 管理脚本..."
-    # 同样从新的 repo 下载
     wget --no-check-certificate -O /usr/bin/x-ui "https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
     chmod +x /usr/bin/x-ui
 
@@ -257,7 +247,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v6)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v7-稳定版)"
 echo "=============================================================="
 echo ""
 
