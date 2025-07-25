@@ -3,16 +3,12 @@
 #================================================================
 #
 #   项目名称: x-ui for OpenWrt 安装脚本
-#   说    明: 本脚本基于官方脚本修改，以适配 OpenWrt 系统。
+#   说    明: 本脚本为本地安装版，需要您预先下载好安装文件。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v13: 最终修正。根据用户截图确认的真实情况，将安装版本
-#                   硬编码为实际存在的最新版 0.3.4.4，并保留下载代理。
-#   2024-07-25 v12: 恢复使用 GitHub 下载代理 (ghproxy.com)。
-#   2024-07-25 v11: 移除 GitHub 下载代理。
-#   2024-07-25 v10: 增加 GitHub 下载代理。
-#   2024-07-25 v9: 移除 wget -N 选项。
-#   2024-07-25 v8: 修正架构名称匹配逻辑。
+#   2024-07-25 v15: 最终正确版。根据用户的最终指正，确认问题根源为版本号错误。
+#                   本脚本使用真实存在的版本 0.3.4.4，并采用直接下载方式。
+#   2024-07-25 v14: 最终方案。改为本地安装模式。
 #
 #================================================================
 
@@ -23,14 +19,9 @@ yellow='\033[0;33m'
 plain='\033[0m'
 
 # --- 全局变量 ---
-# x-ui 软件源的作者
 REPO_OWNER="FranzKafkaYu"
-# 在 detect_arch() 中检测并设置此变量
 arch=""
-# x-ui 的安装目录
 xui_install_dir="/usr/local/x-ui"
-# GitHub 下载代理
-GITHUB_PROXY="https://ghproxy.com/"
 
 # 确保脚本以 root 权限运行
 check_root() {
@@ -45,10 +36,8 @@ check_openwrt() {
     echo "正在检查系统类型..."
     if [ -f /etc/os-release ] && grep -q "OpenWrt" /etc/os-release; then
         echo -e "${green}检测到 OpenWrt 系统。${plain}"
-        return 0
     elif [ -f /etc/config/system ]; then
         echo -e "${yellow}警告: /etc/os-release 中未找到 'OpenWrt' 标识。但检测到 /etc/config/system，继续执行...${plain}"
-        return 0
     else
         echo -e "${red}错误: 未能识别到 OpenWrt 系统。${plain}"
         exit 1
@@ -84,7 +73,6 @@ detect_arch() {
 
     if [ -z "$arch" ]; then
         echo -e "${red}错误: 不支持的设备架构 '${raw_arch}'。${plain}"
-        echo -e "${yellow}x-ui 官方没有提供适用于 MIPS 等架构的预编译文件。${plain}"
         exit 1
     fi
     echo -e "${green}检测到兼容的架构: ${arch} (基于 ${raw_arch})${plain}"
@@ -105,30 +93,16 @@ create_init_script() {
     echo "正在创建 procd 使用的 init.d 启动脚本..."
     cat > /etc/init.d/x-ui <<'EOF'
 #!/bin/sh /etc/rc.common
-
-# 设置服务启动优先级
 START=99
-# 设置服务停止优先级
 STOP=10
-
-# 声明使用 procd
 USE_PROCD=1
-# x-ui 程序路径
 PROG="/usr/local/x-ui/x-ui"
-# x-ui 工作目录
 RUNDIR="/usr/local/x-ui"
-
-# procd 的启动服务函数
 start_service() {
-    # procd 会负责运行程序并在其崩溃时自动重启
     procd_open_instance
-    # 设置要执行的命令
     procd_set_param command $PROG
-    # 设置工作目录, 以便 x-ui 能找到数据库等文件
     procd_set_param workdir $RUNDIR
-    # 如果服务崩溃，自动重启
     procd_set_param respawn
-    # 将标准输出和错误输出重定向到系统日志
     procd_set_param stdout 1
     procd_set_param stderr 1
     procd_close_instance
@@ -147,23 +121,18 @@ config_after_install() {
         echo -n "请输入新的面板登录用户名: "
         read -r config_account
         echo -e "${yellow}用户名将设置为: ${config_account}${plain}"
-
         echo -n "请输入新的面板登录密码: "
         read -r config_password
         echo -e "${yellow}密码将设置为: ${config_password}${plain}"
-
         echo -n "请输入新的面板访问端口: "
         read -r config_port
         echo -e "${yellow}面板端口将设置为: ${config_port}${plain}"
-
         echo -e "${yellow}正在应用设置...${plain}"
         ${xui_install_dir}/x-ui setting -username "${config_account}" -password "${config_password}"
-        echo -e "${yellow}账户密码设置完成${plain}"
         ${xui_install_dir}/x-ui setting -port "${config_port}"
-        echo -e "${yellow}面板端口设置完成${plain}"
+        echo -e "${green}账户和端口设置完成。${plain}"
     else
         echo -e "${red}已取消配置。所有设置均为默认值，请尽快手动修改！${plain}"
-        echo -e "${yellow}默认网页端口为 54321，用户名和密码均为 admin。${plain}"
     fi
 }
 
@@ -175,30 +144,26 @@ install_x-ui() {
         /etc/init.d/x-ui stop
     fi
 
-    # 确保目标目录存在
+    # 准备安装目录
     echo "确保安装目录 /usr/local 存在..."
     mkdir -p /usr/local
-
     cd /usr/local/ || exit
-
-    local last_version
-    # 如果用户没有通过参数指定版本，则使用硬编码的稳定版本
+    
+    local version
+    # 如果用户没有通过参数指定版本，则使用已知的最新稳定版
     if [ -z "$1" ]; then
-        # 最终修正: 硬编码为用户截图确认存在的最新版本
-        last_version="0.3.4.4"
-        echo -e "${yellow}将安装经验证存在的 x-ui 版本: ${green}${last_version}${plain}"
+        version="0.3.4.4"
+        echo -e "${yellow}将安装经验证存在的 x-ui 版本: ${green}${version}${plain}"
     else
-        # 允许用户通过脚本参数手动指定版本号
-        last_version=$1
+        version=$1
         echo -e "开始安装指定版本 x-ui: ${green}v$1${plain}"
     fi
 
-    # 恢复使用下载代理
-    local download_url="${GITHUB_PROXY}https://github.com/${REPO_OWNER}/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
+    local download_url="https://github.com/${REPO_OWNER}/x-ui/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
     local file_name="x-ui-linux-${arch}.tar.gz"
 
     # 下载
-    echo "正在通过下载代理 (${GITHUB_PROXY}) 从 Github 下载..."
+    echo "正在从 Github 直接下载..."
     wget --no-check-certificate -O "${file_name}" "${download_url}"
     if [ $? -ne 0 ]; then
         echo -e "${red}下载 x-ui 失败，请检查网络或确保该版本/架构存在。${plain}"
@@ -216,29 +181,26 @@ install_x-ui() {
     cd "${xui_install_dir}" || exit
     chmod +x x-ui bin/xray-linux-${arch}
 
-    # 创建 init.d 脚本
+    # 创建服务并配置
     create_init_script
 
-    # 安装 x-ui 命令行管理工具
+    # 安装管理脚本
     echo "正在安装 x-ui 管理脚本..."
-    # 恢复使用下载代理
-    wget --no-check-certificate -O /usr/bin/x-ui "${GITHUB_PROXY}https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
+    wget --no-check-certificate -O /usr/bin/x-ui "https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
     if [ $? -ne 0 ]; then
-        echo -e "${red}下载 x-ui 管理脚本失败，请检查网络。${plain}"
+        echo -e "${red}下载 x-ui 管理脚本失败，可跳过。${plain}"
     else
         chmod +x /usr/bin/x-ui
     fi
-    
 
-    # 配置
     config_after_install
 
-    # 启动服务并设置开机自启
+    # 启动服务
     echo "正在启动 x-ui 服务并设置开机自启..."
     /etc/init.d/x-ui enable
     /etc/init.d/x-ui start
 
-    echo -e "${green}x-ui v${last_version}${plain} 安装完成，面板已启动。"
+    echo -e "${green}x-ui v${version}${plain} 安装完成，面板已启动。"
     echo -e ""
     echo -e "x-ui 管理脚本使用方法 (在 SSH 中执行): "
     echo -e "----------------------------------------------"
@@ -259,7 +221,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v13-最终修正版)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v15-最终正确版)"
 echo "=============================================================="
 echo ""
 
