@@ -6,11 +6,13 @@
 #   说    明: 本脚本基于官方脚本修改，以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v9: 移除 wget 命令的 -N 选项，以兼容 OpenWrt 自带的精简版 wget。
-#   2024-07-25 v8: 最终修复。将架构名称匹配逻辑恢复为 armv7/armv6/armv5。
-#   2024-07-25 v7: 硬编码一个已知稳定的新版本号 (2.1.2)。
-#   2024-07-25 v6: 错误地修正了 ARM 架构名称的匹配逻辑。
-#   2024-07-25 v5: 将软件源更换为更活跃的 FranzKafkaYu/x-ui 分支。
+#   2024-07-25 v13: 最终修正。根据用户截图确认的真实情况，将安装版本
+#                   硬编码为实际存在的最新版 0.3.4.4，并保留下载代理。
+#   2024-07-25 v12: 恢复使用 GitHub 下载代理 (ghproxy.com)。
+#   2024-07-25 v11: 移除 GitHub 下载代理。
+#   2024-07-25 v10: 增加 GitHub 下载代理。
+#   2024-07-25 v9: 移除 wget -N 选项。
+#   2024-07-25 v8: 修正架构名称匹配逻辑。
 #
 #================================================================
 
@@ -27,6 +29,8 @@ REPO_OWNER="FranzKafkaYu"
 arch=""
 # x-ui 的安装目录
 xui_install_dir="/usr/local/x-ui"
+# GitHub 下载代理
+GITHUB_PROXY="https://ghproxy.com/"
 
 # 确保脚本以 root 权限运行
 check_root() {
@@ -57,7 +61,6 @@ detect_arch() {
     local raw_arch
     raw_arch=$(uname -m)
 
-    # 最终修正: 根据 FranzKafkaYu/x-ui 新版本的 release 文件名来匹配
     case "$raw_arch" in
         x86_64)
             arch="amd64"
@@ -66,15 +69,12 @@ detect_arch() {
             arch="arm64"
             ;;
         armv7l)
-            # 修正: 新版本使用 armv7
             arch="armv7"
             ;;
         armv6l)
-            # 修正: 新版本使用 armv6
             arch="armv6"
             ;;
         armv5*)
-            # 修正: 新版本使用 armv5
             arch="armv5"
             ;;
         *)
@@ -184,21 +184,21 @@ install_x-ui() {
     local last_version
     # 如果用户没有通过参数指定版本，则使用硬编码的稳定版本
     if [ -z "$1" ]; then
-        # 硬编码一个已知包含所有架构的稳定版本号，以绕过不稳定的 GitHub API 请求
-        last_version="2.1.2"
-        echo -e "${yellow}为确保稳定性，将安装指定的 x-ui 版本: ${green}${last_version}${plain}"
+        # 最终修正: 硬编码为用户截图确认存在的最新版本
+        last_version="0.3.4.4"
+        echo -e "${yellow}将安装经验证存在的 x-ui 版本: ${green}${last_version}${plain}"
     else
         # 允许用户通过脚本参数手动指定版本号
         last_version=$1
         echo -e "开始安装指定版本 x-ui: ${green}v$1${plain}"
     fi
 
-    local download_url="https://github.com/${REPO_OWNER}/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
+    # 恢复使用下载代理
+    local download_url="${GITHUB_PROXY}https://github.com/${REPO_OWNER}/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
     local file_name="x-ui-linux-${arch}.tar.gz"
 
     # 下载
-    echo "正在从 Github 下载..."
-    # 修正: 移除 -N 选项以兼容 OpenWrt 的精简版 wget
+    echo "正在通过下载代理 (${GITHUB_PROXY}) 从 Github 下载..."
     wget --no-check-certificate -O "${file_name}" "${download_url}"
     if [ $? -ne 0 ]; then
         echo -e "${red}下载 x-ui 失败，请检查网络或确保该版本/架构存在。${plain}"
@@ -221,8 +221,14 @@ install_x-ui() {
 
     # 安装 x-ui 命令行管理工具
     echo "正在安装 x-ui 管理脚本..."
-    wget --no-check-certificate -O /usr/bin/x-ui "https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
-    chmod +x /usr/bin/x-ui
+    # 恢复使用下载代理
+    wget --no-check-certificate -O /usr/bin/x-ui "${GITHUB_PROXY}https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
+    if [ $? -ne 0 ]; then
+        echo -e "${red}下载 x-ui 管理脚本失败，请检查网络。${plain}"
+    else
+        chmod +x /usr/bin/x-ui
+    fi
+    
 
     # 配置
     config_after_install
@@ -253,7 +259,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v9-最终兼容版)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v13-最终修正版)"
 echo "=============================================================="
 echo ""
 
