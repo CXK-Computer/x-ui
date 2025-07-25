@@ -6,9 +6,9 @@
 #   说    明: 本脚本为本地安装版，需要您预先下载好安装文件。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v16: 最终方案。增加磁盘空间检查，并优化下载和解压流程，
-#                   以解决因空间不足导致的下载超时问题。恢复为直接下载。
-#   2024-07-25 v15: 根据用户的最终指正，确认问题根源为版本号错误。
+#   2024-07-25 v17: 最终诊断版。重写空间检查逻辑，分别检查下载分区 (/tmp)
+#                   和安装分区 (/usr/local) 的空间，以准确定位空间不足问题。
+#   2024-07-25 v16: 增加磁盘空间检查，但逻辑存在缺陷。
 #
 #================================================================
 
@@ -78,22 +78,38 @@ detect_arch() {
     echo -e "${green}检测到兼容的架构: ${arch} (基于 ${raw_arch})${plain}"
 }
 
-# 检查磁盘空间
+# 检查磁盘空间 (精确版)
 check_disk_space() {
     echo "正在检查磁盘空间..."
-    # 需要至少 30MB (30720 KB) 的空间用于下载和解压
-    local required_space=30720
-    local available_space
-    available_space=$(df -k /tmp | awk 'NR==2 {print $4}')
+    
+    # 1. 检查 /tmp 目录下载空间 (约 25MB)
+    local required_tmp_space=25600 # 25MB
+    local available_tmp_space
+    available_tmp_space=$(df -k /tmp | awk 'NR==2 {print $4}')
 
-    if [ "$available_space" -lt "$required_space" ]; then
-        echo -e "${red}错误: 存储空间不足！${plain}"
-        echo -e "脚本需要在 /tmp 目录至少 ${yellow}30MB${plain} 的可用空间来下载和解压文件。"
-        echo -e "当前可用空间: ${yellow}${available_space}KB${plain}"
-        echo -e "请清理您设备的存储空间后再试。"
+    if [ "$available_tmp_space" -lt "$required_tmp_space" ]; then
+        echo -e "${red}错误: /tmp 目录空间不足！${plain}"
+        echo -e "脚本需要在 /tmp 目录至少 ${yellow}25MB${plain} 的可用空间来下载文件。"
+        echo -e "当前可用空间: ${yellow}${available_tmp_space}KB${plain}"
         exit 1
     fi
-    echo -e "${green}/tmp 目录空间充足 (可用: ${available_space}KB)。${plain}"
+    echo -e "${green}/tmp 目录空间充足 (可用: ${available_tmp_space}KB)。${plain}"
+
+    # 2. 检查 /usr/local 所在分区的解压空间 (约 40MB)
+    local required_install_space=40960 # 40MB
+    local available_install_space
+    local install_parent_dir="/usr/local"
+    mkdir -p ${install_parent_dir} # 确保目录存在
+    available_install_space=$(df -k ${install_parent_dir} | awk 'NR==2 {print $4}')
+
+    if [ "$available_install_space" -lt "$required_install_space" ]; then
+        echo -e "${red}错误: 目标安装分区存储空间不足！${plain}"
+        echo -e "脚本需要在 ${install_parent_dir} 目录所在的分区至少有 ${yellow}40MB${plain} 的可用空间来解压文件。"
+        echo -e "当前可用空间: ${yellow}${available_install_space}KB${plain}"
+        echo -e "${yellow}请卸载一些不必要的软件包，或将 OpenWrt 系统安装到外置 USB 存储设备上以获取更多空间。${plain}"
+        exit 1
+    fi
+    echo -e "${green}目标安装分区空间充足 (可用: ${available_install_space}KB)。${plain}"
 }
 
 
@@ -244,7 +260,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v16-空间检查版)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v17-最终诊断版)"
 echo "=============================================================="
 echo ""
 
