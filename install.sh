@@ -6,9 +6,9 @@
 #   说    明: 本脚本为本地安装版，需要您预先下载好安装文件。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v17: 最终诊断版。重写空间检查逻辑，分别检查下载分区 (/tmp)
-#                   和安装分区 (/usr/local) 的空间，以准确定位空间不足问题。
-#   2024-07-25 v16: 增加磁盘空间检查，但逻辑存在缺陷。
+#   2024-07-25 v18: 智能路径版。当 /usr/local 空间不足时，允许用户选择
+#                   安装到 /tmp 目录（非持久化），并增加明确风险提示。
+#   2024-07-25 v17: 最终诊断版。重写空间检查逻辑。
 #
 #================================================================
 
@@ -21,7 +21,8 @@ plain='\033[0m'
 # --- 全局变量 ---
 REPO_OWNER="FranzKafkaYu"
 arch=""
-xui_install_dir="/usr/local/x-ui"
+# xui_install_dir 变量将由 determine_install_path 函数动态设置
+xui_install_dir=""
 
 # 确保脚本以 root 权限运行
 check_root() {
@@ -78,40 +79,54 @@ detect_arch() {
     echo -e "${green}检测到兼容的架构: ${arch} (基于 ${raw_arch})${plain}"
 }
 
-# 检查磁盘空间 (精确版)
-check_disk_space() {
-    echo "正在检查磁盘空间..."
+# 决定安装路径，如果空间不足则警告
+determine_install_path() {
+    echo "正在确定最佳安装路径..."
     
-    # 1. 检查 /tmp 目录下载空间 (约 25MB)
-    local required_tmp_space=25600 # 25MB
-    local available_tmp_space
-    available_tmp_space=$(df -k /tmp | awk 'NR==2 {print $4}')
+    local required_space=40960 # 解压需要约 40MB
+    local preferred_parent_dir="/usr/local"
+    local fallback_parent_dir="/tmp"
 
-    if [ "$available_tmp_space" -lt "$required_tmp_space" ]; then
-        echo -e "${red}错误: /tmp 目录空间不足！${plain}"
-        echo -e "脚本需要在 /tmp 目录至少 ${yellow}25MB${plain} 的可用空间来下载文件。"
-        echo -e "当前可用空间: ${yellow}${available_tmp_space}KB${plain}"
-        exit 1
+    # 1. 检查首选的持久化存储路径 /usr/local
+    mkdir -p ${preferred_parent_dir}
+    local available_preferred_space
+    available_preferred_space=$(df -k ${preferred_parent_dir} | awk 'NR==2 {print $4}')
+
+    if [ "$available_preferred_space" -ge "$required_space" ]; then
+        xui_install_dir="${preferred_parent_dir}/x-ui"
+        echo -e "${green}检测到 ${preferred_parent_dir} 空间充足，将安装于此 (持久化存储)。${plain}"
+        return
     fi
-    echo -e "${green}/tmp 目录空间充足 (可用: ${available_tmp_space}KB)。${plain}"
 
-    # 2. 检查 /usr/local 所在分区的解压空间 (约 40MB)
-    local required_install_space=40960 # 40MB
-    local available_install_space
-    local install_parent_dir="/usr/local"
-    mkdir -p ${install_parent_dir} # 确保目录存在
-    available_install_space=$(df -k ${install_parent_dir} | awk 'NR==2 {print $4}')
+    # 2. 如果首选路径空间不足，检查备用的临时存储路径 /tmp
+    echo -e "${yellow}警告: ${preferred_parent_dir} 空间不足 (可用: ${available_preferred_space}KB, 需要: ${required_space}KB)。${plain}"
+    echo "正在检查 ${fallback_parent_dir} 目录作为备选方案..."
+    
+    local available_fallback_space
+    available_fallback_space=$(df -k ${fallback_parent_dir} | awk 'NR==2 {print $4}')
 
-    if [ "$available_install_space" -lt "$required_install_space" ]; then
-        echo -e "${red}错误: 目标安装分区存储空间不足！${plain}"
-        echo -e "脚本需要在 ${install_parent_dir} 目录所在的分区至少有 ${yellow}40MB${plain} 的可用空间来解压文件。"
-        echo -e "当前可用空间: ${yellow}${available_install_space}KB${plain}"
-        echo -e "${yellow}请卸载一些不必要的软件包，或将 OpenWrt 系统安装到外置 USB 存储设备上以获取更多空间。${plain}"
-        exit 1
+    if [ "$available_fallback_space" -ge "$required_space" ]; then
+        xui_install_dir="${fallback_parent_dir}/x-ui"
+        echo -e "${red}==================== 重要警告 ====================${plain}"
+        echo -e "${yellow}备选方案: ${fallback_parent_dir} 目录空间充足，将安装于此。${plain}"
+        echo -e "${yellow}但请注意: ${fallback_parent_dir} 目录位于内存中，这意味着${plain}"
+        echo -e "${red}设备重启后，x-ui 程序及其所有配置都将丢失！${plain}"
+        echo -e "${yellow}这只应作为临时解决方案。${plain}"
+        echo -e "${red}==================================================${plain}"
+        echo -n "您是否理解风险并希望继续? [y/n]: "
+        read -r confirm_tmp
+        if [ "$confirm_tmp" != "y" ] && [ "$confirm_tmp" != "Y" ]; then
+            echo "安装已取消。"
+            exit 1
+        fi
+        return
     fi
-    echo -e "${green}目标安装分区空间充足 (可用: ${available_install_space}KB)。${plain}"
+    
+    # 3. 如果两个位置都没有足够空间
+    echo -e "${red}错误: 两个检查路径 (/usr/local 和 /tmp) 均无足够空间！${plain}"
+    echo -e "请清理您设备的存储空间，或将 OpenWrt 系统安装到外置 USB 存储设备上以获取更多空间。"
+    exit 1
 }
-
 
 # 使用 opkg 安装基础依赖
 install_base() {
@@ -131,8 +146,8 @@ create_init_script() {
 START=99
 STOP=10
 USE_PROCD=1
-PROG="/usr/local/x-ui/x-ui"
-RUNDIR="/usr/local/x-ui"
+PROG="__PROG_PATH__"
+RUNDIR="__RUNDIR_PATH__"
 start_service() {
     procd_open_instance
     procd_set_param command $PROG
@@ -143,6 +158,10 @@ start_service() {
     procd_close_instance
 }
 EOF
+    # 将占位符替换为动态确定的安装路径
+    sed -i "s|__PROG_PATH__|${xui_install_dir}/x-ui|g" /etc/init.d/x-ui
+    sed -i "s|__RUNDIR_PATH__|${xui_install_dir}|g" /etc/init.d/x-ui
+
     chmod +x /etc/init.d/x-ui
     echo -e "${green}init.d 脚本创建成功。${plain}"
 }
@@ -179,24 +198,14 @@ install_x-ui() {
         /etc/init.d/x-ui stop
     fi
     
-    local version
-    # 如果用户没有通过参数指定版本，则使用已知的最新稳定版
-    if [ -z "$1" ]; then
-        version="0.3.4.4"
-        echo -e "${yellow}将安装经验证存在的 x-ui 版本: ${green}${version}${plain}"
-    else
-        version=$1
-        echo -e "开始安装指定版本 x-ui: ${green}v$1${plain}"
-    fi
-
+    local version="0.3.4.4"
     local download_url="https://github.com/${REPO_OWNER}/x-ui/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
     local file_name="x-ui-linux-${arch}.tar.gz"
     local file_path="/tmp/${file_name}"
 
-    # 优化下载流程
+    # 下载到 /tmp 目录
     cd /tmp || exit
 
-    # 下载
     echo "正在从 Github 直接下载文件到 /tmp 目录..."
     wget --no-check-certificate -O "${file_path}" "${download_url}"
     if [ $? -ne 0 ]; then
@@ -206,12 +215,14 @@ install_x-ui() {
     echo -e "${green}文件下载成功。${plain}"
 
     # 准备安装目录并解压
-    echo "正在准备安装目录并解压文件..."
-    mkdir -p /usr/local
-    if [ -d ${xui_install_dir} ]; then
-        rm -rf ${xui_install_dir}
+    local install_parent_dir
+    install_parent_dir=$(dirname "$xui_install_dir")
+    echo "正在准备安装目录 (${install_parent_dir}) 并解压文件..."
+    mkdir -p "${install_parent_dir}"
+    if [ -d "${xui_install_dir}" ]; then
+        rm -rf "${xui_install_dir}"
     fi
-    tar -zxf "${file_path}" -C /usr/local
+    tar -zxf "${file_path}" -C "${install_parent_dir}"
     
     # 清理下载的临时文件
     rm -f "${file_path}"
@@ -260,14 +271,15 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v17-最终诊断版)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v18-智能路径版)"
 echo "=============================================================="
 echo ""
 
 check_root
 check_openwrt
 detect_arch
-check_disk_space
+# 移除了 install_base 和 check_disk_space, 将在主函数中调用
 install_base
+determine_install_path
 install_x-ui "$1"
 
