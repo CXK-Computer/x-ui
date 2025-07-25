@@ -7,6 +7,7 @@
 #             以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
+#   2024-07-25 v3: 在安装前自动创建 /usr/local 目录，防止因目录不存在而出错。
 #   2024-07-25 v2: 改用 'uname -m' 进行架构检测，以提高兼容性和可靠性。
 #   2024-07-25 v1: 修复了 detect_arch 函数中对 opkg 架构的错误解析问题。
 #
@@ -161,6 +162,10 @@ install_x-ui() {
         /etc/init.d/x-ui stop
     fi
 
+    # 修正: 确保目标目录存在
+    echo "确保安装目录 /usr/local 存在..."
+    mkdir -p /usr/local
+
     cd /usr/local/ || exit
 
     local last_version
@@ -237,7 +242,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v2)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v3)"
 echo "=============================================================="
 echo ""
 
