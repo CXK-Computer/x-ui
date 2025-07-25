@@ -66,7 +66,7 @@ disable(){ /etc/init.d/x-ui disable; if [[ $? == 0 ]]; then LOGI "x-ui quitado d
 show_log(){ LOGI "Mostrando logs. Presione Ctrl+C para salir."; logread -f -e x-ui; if [[ $# == 0 ]]; then before_show_menu; fi; }
 uninstall(){ confirm "Seguro que quieres desinstalar el panel?" "n"; if [[ $? != 0 ]]; then if [[ $# == 0 ]]; then show_menu; fi; return 0; fi; /etc/init.d/x-ui stop; /etc/init.d/x-ui disable; rm /etc/init.d/x-ui; rm /etc/x-ui/ -rf; rm /usr/local/x-ui/ -rf; rm /usr/bin/x-ui -f; LOGI "Desinstalación completa."; if [[ $# == 0 ]]; then before_show_menu; fi; }
 show_status() { check_status; case $? in 0) echo -e "Estado: ${green}Corriendo${plain}"; check_enabled && echo -e "Inicio auto: ${green}Sí${plain}" || echo -e "Inicio auto: ${red}No${plain}";; 1) echo -e "Estado: ${yellow}Detenido${plain}"; check_enabled && echo -e "Inicio auto: ${green}Sí${plain}" || echo -e "Inicio auto: ${red}No${plain}";; 2) echo -e "Estado: ${red}No instalado${plain}";; esac; }
-show_menu(){ clear; echo -e "  ${green}Script de gestión x-ui (OpenWrt)${plain}\n  ${green}0.${plain} Salir\n————————————————\n  ${green}1.${plain} Instalar x-ui\n  ${green}2.${plain} Actualizar x-ui\n  ${green}3.${plain} Desinstalar x-ui\n————————————————\n  ${green}8.${plain} Iniciar x-ui\n  ${green}9.${plain} Detener x-ui\n  ${green}10.${plain} Reiniciar x-ui\n  ${green}11.${plain} Ver estado\n  ${green}12.${plain} Ver logs\n————————————————\n  ${green}13.${plain} Habilitar inicio auto\n  ${green}14.${plain} Deshabilitar inicio auto\n"; show_status; echo && read -p "Selección [0-14]: " num; case "${num}" in 0) exit 0;; 1) bash /root/install-openwrt.sh;; 2) bash /root/install-openwrt.sh;; 3) uninstall;; 8) start;; 9) stop;; 10) restart;; 11) status && before_show_menu;; 12) show_log;; 13) enable;; 14) disable;; *) LOGE "Opción inválida";; esac; }
+show_menu(){ clear; echo -e "  ${green}Script de gestión x-ui (OpenWrt)${plain}\n  ${green}0.${plain} Salir\n————————————————\n  ${green}1.${plain} Instalar/Actualizar x-ui\n  ${green}3.${plain} Desinstalar x-ui\n————————————————\n  ${green}8.${plain} Iniciar x-ui\n  ${green}9.${plain} Detener x-ui\n  ${green}10.${plain} Reiniciar x-ui\n  ${green}11.${plain} Ver estado\n  ${green}12.${plain} Ver logs\n————————————————\n  ${green}13.${plain} Habilitar inicio auto\n  ${green}14.${plain} Deshabilitar inicio auto\n"; show_status; echo && read -p "Selección [0-14]: " num; case "${num}" in 0) exit 0;; 1) bash /root/install-openwrt.sh;; 3) uninstall;; 8) start;; 9) stop;; 10) restart;; 11) status && before_show_menu;; 12) show_log;; 13) enable;; 14) disable;; *) LOGE "Opción inválida";; esac; }
 show_menu
 EOF
     chmod +x /usr/bin/x-ui
@@ -129,18 +129,12 @@ config_after_install() {
 # --- Función Principal de Instalación ---
 install_x-ui() {
     LOGI "Deteniendo cualquier instancia previa de x-ui..."
-    # Si el script de inicio existe, lo usa para detener el servicio
     [ -f /etc/init.d/x-ui ] && /etc/init.d/x-ui stop
 
-    # --- INICIO DE LA CORRECCIÓN ---
-    # Asegurar que el directorio de instalación /usr/local/ existe
     LOGI "Asegurando que el directorio de instalación /usr/local existe..."
     mkdir -p /usr/local/
-    # --- FIN DE LA CORRECCIÓN ---
-
     cd /usr/local/
 
-    # Obtener la última versión de la API de GitHub
     last_version=$(curl -Ls "https://api.github.com/repos/vaxilu/x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     if [[ -z "$last_version" ]]; then
         LOGE "Fallo al detectar la última versión de x-ui. Puede ser un límite de la API de GitHub."
@@ -148,19 +142,20 @@ install_x-ui() {
     fi
     LOGI "Última versión detectada: ${last_version}. Iniciando descarga..."
 
-    # Descargar el binario
-    wget -N --no-check-certificate -O "/usr/local/x-ui-linux-${arch}.tar.gz" "https://github.com/vaxilu/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Se eliminó la opción -N, no soportada por el wget de BusyBox en OpenWrt
+    wget --no-check-certificate -O "/usr/local/x-ui-linux-${arch}.tar.gz" "https://github.com/vaxilu/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
+    # --- FIN DE LA CORRECCIÓN ---
+    
     if [[ $? -ne 0 ]]; then
         LOGE "La descarga de x-ui falló. Asegúrese de que su dispositivo puede conectar con GitHub."
         exit 1
     fi
 
-    # Descomprimir
     [[ -d /usr/local/x-ui/ ]] && rm -rf /usr/local/x-ui/
     tar -zxvf "x-ui-linux-${arch}.tar.gz" -C /usr/local/
     rm "x-ui-linux-${arch}.tar.gz"
     
-    # Mover al directorio correcto si es necesario (el tarball puede crear un subdirectorio 'x-ui')
     if [[ -d /usr/local/x-ui ]]; then
         cd /usr/local/x-ui
     else
@@ -170,14 +165,10 @@ install_x-ui() {
 
     chmod +x x-ui bin/xray-linux-${arch}
 
-    # Crear los scripts necesarios
     create_init_script
     create_management_script
-
-    # Configuración final del usuario
     config_after_install
     
-    # Habilitar e iniciar el servicio
     LOGI "Habilitando el inicio automático del servicio..."
     /etc/init.d/x-ui enable
     LOGI "Iniciando el servicio x-ui..."
