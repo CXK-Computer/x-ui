@@ -6,9 +6,9 @@
 #   说    明: 本脚本为本地安装版，需要您预先下载好安装文件。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v15: 最终正确版。根据用户的最终指正，确认问题根源为版本号错误。
-#                   本脚本使用真实存在的版本 0.3.4.4，并采用直接下载方式。
-#   2024-07-25 v14: 最终方案。改为本地安装模式。
+#   2024-07-25 v16: 最终方案。增加磁盘空间检查，并优化下载和解压流程，
+#                   以解决因空间不足导致的下载超时问题。恢复为直接下载。
+#   2024-07-25 v15: 根据用户的最终指正，确认问题根源为版本号错误。
 #
 #================================================================
 
@@ -78,6 +78,25 @@ detect_arch() {
     echo -e "${green}检测到兼容的架构: ${arch} (基于 ${raw_arch})${plain}"
 }
 
+# 检查磁盘空间
+check_disk_space() {
+    echo "正在检查磁盘空间..."
+    # 需要至少 30MB (30720 KB) 的空间用于下载和解压
+    local required_space=30720
+    local available_space
+    available_space=$(df -k /tmp | awk 'NR==2 {print $4}')
+
+    if [ "$available_space" -lt "$required_space" ]; then
+        echo -e "${red}错误: 存储空间不足！${plain}"
+        echo -e "脚本需要在 /tmp 目录至少 ${yellow}30MB${plain} 的可用空间来下载和解压文件。"
+        echo -e "当前可用空间: ${yellow}${available_space}KB${plain}"
+        echo -e "请清理您设备的存储空间后再试。"
+        exit 1
+    fi
+    echo -e "${green}/tmp 目录空间充足 (可用: ${available_space}KB)。${plain}"
+}
+
+
 # 使用 opkg 安装基础依赖
 install_base() {
     echo "正在安装依赖包 (wget, curl, tar)..."
@@ -143,11 +162,6 @@ install_x-ui() {
         echo "检测到旧版本，正在停止 x-ui 服务..."
         /etc/init.d/x-ui stop
     fi
-
-    # 准备安装目录
-    echo "确保安装目录 /usr/local 存在..."
-    mkdir -p /usr/local
-    cd /usr/local/ || exit
     
     local version
     # 如果用户没有通过参数指定版本，则使用已知的最新稳定版
@@ -161,32 +175,41 @@ install_x-ui() {
 
     local download_url="https://github.com/${REPO_OWNER}/x-ui/releases/download/${version}/x-ui-linux-${arch}.tar.gz"
     local file_name="x-ui-linux-${arch}.tar.gz"
+    local file_path="/tmp/${file_name}"
+
+    # 优化下载流程
+    cd /tmp || exit
 
     # 下载
-    echo "正在从 Github 直接下载..."
-    wget --no-check-certificate -O "${file_name}" "${download_url}"
+    echo "正在从 Github 直接下载文件到 /tmp 目录..."
+    wget --no-check-certificate -O "${file_path}" "${download_url}"
     if [ $? -ne 0 ]; then
         echo -e "${red}下载 x-ui 失败，请检查网络或确保该版本/架构存在。${plain}"
         exit 1
     fi
+    echo -e "${green}文件下载成功。${plain}"
 
-    # 删除旧目录
+    # 准备安装目录并解压
+    echo "正在准备安装目录并解压文件..."
+    mkdir -p /usr/local
     if [ -d ${xui_install_dir} ]; then
         rm -rf ${xui_install_dir}
     fi
-
-    # 解压
-    tar -zxf "${file_name}"
-    rm -f "${file_name}"
+    tar -zxf "${file_path}" -C /usr/local
+    
+    # 清理下载的临时文件
+    rm -f "${file_path}"
+    
     cd "${xui_install_dir}" || exit
     chmod +x x-ui bin/xray-linux-${arch}
+    echo -e "${green}文件解压和安装完成。${plain}"
 
     # 创建服务并配置
     create_init_script
 
     # 安装管理脚本
     echo "正在安装 x-ui 管理脚本..."
-    wget --no-check-certificate -O /usr/bin/x-ui "https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
+    wget --no-check-certificate -O /usr/bin/x-ui "https://raw.githubusercontent.com/FranzKafkaYu/x-ui/main/x-ui.sh"
     if [ $? -ne 0 ]; then
         echo -e "${red}下载 x-ui 管理脚本失败，可跳过。${plain}"
     else
@@ -221,13 +244,14 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v15-最终正确版)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v16-空间检查版)"
 echo "=============================================================="
 echo ""
 
 check_root
 check_openwrt
 detect_arch
+check_disk_space
 install_base
 install_x-ui "$1"
 
