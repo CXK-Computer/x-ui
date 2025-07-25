@@ -3,14 +3,14 @@
 #================================================================
 #
 #   项目名称: x-ui for OpenWrt 安装脚本
-#   说    明: 本脚本基于 vaxilu/x-ui 的官方脚本修改，
-#             以适配 OpenWrt 系统。
+#   说    明: 本脚本基于官方脚本修改，以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v4: 增强 OpenWrt 系统检测逻辑，增加对 /etc/config/system 文件的检查。
-#   2024-07-25 v3: 在安装前自动创建 /usr/local 目录，防止因目录不存在而出错。
-#   2024-07-25 v2: 改用 'uname -m' 进行架构检测，以提高兼容性和可靠性。
-#   2024-07-25 v1: 修复了 detect_arch 函数中对 opkg 架构的错误解析问题。
+#   2024-07-25 v5: 将软件源从 vaxilu/x-ui 更换为更活跃的 FranzKafkaYu/x-ui 分支，
+#                  以解决 armv7 等架构的 404 Not Found 问题，并修正了架构名称的匹配。
+#   2024-07-25 v4: 增强 OpenWrt 系统检测逻辑。
+#   2024-07-25 v3: 在安装前自动创建 /usr/local 目录。
+#   2024-07-25 v2: 改用 'uname -m' 进行架构检测。
 #
 #================================================================
 
@@ -20,7 +20,9 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-# 全局变量
+# --- 全局变量 ---
+# x-ui 软件源的作者
+REPO_OWNER="FranzKafkaYu"
 # 在 detect_arch() 中检测并设置此变量
 arch=""
 # x-ui 的安装目录
@@ -37,19 +39,14 @@ check_root() {
 # 检查系统是否为 OpenWrt (增强版)
 check_openwrt() {
     echo "正在检查系统类型..."
-    # 检查多个 OpenWrt 的特征文件，增加可靠性
     if [ -f /etc/os-release ] && grep -q "OpenWrt" /etc/os-release; then
-        # 如果 /etc/os-release 存在且包含 "OpenWrt"，则认为是 OpenWrt
         echo -e "${green}检测到 OpenWrt 系统。${plain}"
         return 0
     elif [ -f /etc/config/system ]; then
-        # 如果 /etc/config/system 文件存在，也认为是 OpenWrt
         echo -e "${yellow}警告: /etc/os-release 中未找到 'OpenWrt' 标识。但检测到 /etc/config/system，继续执行...${plain}"
         return 0
     else
         echo -e "${red}错误: 未能识别到 OpenWrt 系统。${plain}"
-        echo "脚本通过检查 /etc/os-release 文件或 /etc/config/system 文件是否存在来判断系统类型。"
-        echo "请确认您正在 OpenWrt 环境下运行此脚本。"
         exit 1
     fi
 }
@@ -57,10 +54,10 @@ check_openwrt() {
 # 检测设备架构
 detect_arch() {
     echo "正在检测设备架构..."
-    # 使用 'uname -m' 获取架构, 这比解析 opkg 的输出更可靠
     local raw_arch
     raw_arch=$(uname -m)
 
+    # 修正: 根据 FranzKafkaYu/x-ui 的 release 文件名来匹配
     case "$raw_arch" in
         x86_64)
             arch="amd64"
@@ -69,13 +66,13 @@ detect_arch() {
             arch="arm64"
             ;;
         armv7l)
-            arch="arm-v7"
+            arch="armv7"
             ;;
         armv6l)
-            arch="arm-v6"
+            arch="armv6"
             ;;
         armv5*)
-            arch="arm-v5"
+            arch="armv5"
             ;;
         *)
             arch=""
@@ -175,7 +172,7 @@ install_x-ui() {
         /etc/init.d/x-ui stop
     fi
 
-    # 修正: 确保目标目录存在
+    # 确保目标目录存在
     echo "确保安装目录 /usr/local 存在..."
     mkdir -p /usr/local
 
@@ -184,8 +181,8 @@ install_x-ui() {
     local last_version
     # 如果用户没有指定版本号，就获取最新版
     if [ -z "$1" ]; then
-        echo "正在检测 x-ui 最新版本..."
-        last_version=$(curl -Ls "https://api.github.com/repos/vaxilu/x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        echo "正在从 ${REPO_OWNER}/x-ui 检测最新版本..."
+        last_version=$(curl -Ls "https://api.github.com/repos/${REPO_OWNER}/x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [ -z "$last_version" ]; then
             echo -e "${red}检测 x-ui 版本失败，可能是超出 Github API 限制，请稍后再试。${plain}"
             exit 1
@@ -196,14 +193,14 @@ install_x-ui() {
         echo -e "开始安装指定版本 x-ui: ${green}v$1${plain}"
     fi
 
-    local download_url="https://github.com/vaxilu/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
+    local download_url="https://github.com/${REPO_OWNER}/x-ui/releases/download/${last_version}/x-ui-linux-${arch}.tar.gz"
     local file_name="x-ui-linux-${arch}.tar.gz"
 
     # 下载
     echo "正在从 Github 下载..."
     wget -N --no-check-certificate -O "${file_name}" "${download_url}"
     if [ $? -ne 0 ]; then
-        echo -e "${red}下载 x-ui 失败，请检查网络或确保该版本存在。${plain}"
+        echo -e "${red}下载 x-ui 失败，请检查网络或确保该版本/架构存在。${plain}"
         exit 1
     fi
 
@@ -223,7 +220,8 @@ install_x-ui() {
 
     # 安装 x-ui 命令行管理工具
     echo "正在安装 x-ui 管理脚本..."
-    wget --no-check-certificate -O /usr/bin/x-ui https://raw.githubusercontent.com/vaxilu/x-ui/main/x-ui.sh
+    # 同样从新的 repo 下载
+    wget --no-check-certificate -O /usr/bin/x-ui "https://raw.githubusercontent.com/${REPO_OWNER}/x-ui/main/x-ui.sh"
     chmod +x /usr/bin/x-ui
 
     # 配置
@@ -255,7 +253,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v4)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v5)"
 echo "=============================================================="
 echo ""
 
