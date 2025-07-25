@@ -7,6 +7,7 @@
 #             以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
+#   2024-07-25 v4: 增强 OpenWrt 系统检测逻辑，增加对 /etc/config/system 文件的检查。
 #   2024-07-25 v3: 在安装前自动创建 /usr/local 目录，防止因目录不存在而出错。
 #   2024-07-25 v2: 改用 'uname -m' 进行架构检测，以提高兼容性和可靠性。
 #   2024-07-25 v1: 修复了 detect_arch 函数中对 opkg 架构的错误解析问题。
@@ -33,10 +34,22 @@ check_root() {
     fi
 }
 
-# 检查系统是否为 OpenWrt
+# 检查系统是否为 OpenWrt (增强版)
 check_openwrt() {
-    if ! grep -q "OpenWrt" /etc/os-release; then
-        echo -e "${red}错误: 此脚本仅为 OpenWrt 设计。${plain}\n"
+    echo "正在检查系统类型..."
+    # 检查多个 OpenWrt 的特征文件，增加可靠性
+    if [ -f /etc/os-release ] && grep -q "OpenWrt" /etc/os-release; then
+        # 如果 /etc/os-release 存在且包含 "OpenWrt"，则认为是 OpenWrt
+        echo -e "${green}检测到 OpenWrt 系统。${plain}"
+        return 0
+    elif [ -f /etc/config/system ]; then
+        # 如果 /etc/config/system 文件存在，也认为是 OpenWrt
+        echo -e "${yellow}警告: /etc/os-release 中未找到 'OpenWrt' 标识。但检测到 /etc/config/system，继续执行...${plain}"
+        return 0
+    else
+        echo -e "${red}错误: 未能识别到 OpenWrt 系统。${plain}"
+        echo "脚本通过检查 /etc/os-release 文件或 /etc/config/system 文件是否存在来判断系统类型。"
+        echo "请确认您正在 OpenWrt 环境下运行此脚本。"
         exit 1
     fi
 }
@@ -242,7 +255,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v3)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v4)"
 echo "=============================================================="
 echo ""
 
