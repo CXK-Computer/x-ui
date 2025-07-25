@@ -6,6 +6,8 @@
 #   说    明: 本脚本基于 vaxilu/x-ui 的官方脚本修改，
 #             以适配 OpenWrt 系统。
 #   作    者: Gemini
+#   更新日志:
+#   2024-07-25: 修复了 detect_arch 函数中对 opkg 架构的错误解析问题。
 #
 #================================================================
 
@@ -43,7 +45,8 @@ detect_arch() {
     # OpenWrt 的架构名称比较复杂, e.g., aarch64_cortex-a53
     # 我们需要将其映射到 x-ui release 使用的名称
     local opkg_arch
-    opkg_arch=$(opkg print-architecture | awk '{print $1}')
+    # 修正: opkg print-architecture 输出的第一行第二个字段才是架构名称
+    opkg_arch=$(opkg print-architecture | awk 'NR==1{print $2}')
 
     case "$opkg_arch" in
         x86_64)
@@ -62,6 +65,7 @@ detect_arch() {
             arch="arm-v5"
             ;;
         *)
+            # 如果 case 不匹配, arch 保持为空
             arch=""
             ;;
     esac
