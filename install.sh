@@ -6,8 +6,8 @@
 #   说    明: 本脚本基于官方脚本修改，以适配 OpenWrt 系统。
 #   作    者: Gemini
 #   更新日志:
-#   2024-07-25 v8: 最终修复。将架构名称匹配逻辑恢复为 armv7/armv6/armv5，
-#                  以匹配 2.1.2 等新版本的 release 文件名。
+#   2024-07-25 v9: 移除 wget 命令的 -N 选项，以兼容 OpenWrt 自带的精简版 wget。
+#   2024-07-25 v8: 最终修复。将架构名称匹配逻辑恢复为 armv7/armv6/armv5。
 #   2024-07-25 v7: 硬编码一个已知稳定的新版本号 (2.1.2)。
 #   2024-07-25 v6: 错误地修正了 ARM 架构名称的匹配逻辑。
 #   2024-07-25 v5: 将软件源更换为更活跃的 FranzKafkaYu/x-ui 分支。
@@ -198,7 +198,8 @@ install_x-ui() {
 
     # 下载
     echo "正在从 Github 下载..."
-    wget -N --no-check-certificate -O "${file_name}" "${download_url}"
+    # 修正: 移除 -N 选项以兼容 OpenWrt 的精简版 wget
+    wget --no-check-certificate -O "${file_name}" "${download_url}"
     if [ $? -ne 0 ]; then
         echo -e "${red}下载 x-ui 失败，请检查网络或确保该版本/架构存在。${plain}"
         exit 1
@@ -252,7 +253,7 @@ install_x-ui() {
 # --- 脚本执行入口 ---
 clear
 echo "=============================================================="
-echo "         x-ui for OpenWrt 一键安装脚本 (v8-最终修复版)"
+echo "         x-ui for OpenWrt 一键安装脚本 (v9-最终兼容版)"
 echo "=============================================================="
 echo ""
 
